@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>routeLocator_service_point</title>
+    <script type="text/javascript" include="bootstrap-css" src="../js/include-web.js"></script>
+    <script src="../../dist/openlayers/include-openlayers.js"></script>
+    <style>
+        .ol-popup {
+            position: absolute;
+            background-color: white;
+            -webkit-filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.2));
+            filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.2));
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #cccccc;
+            bottom: 12px;
+            left: -50px;
+            min-width: 200px;
+        }
+
+        .ol-popup:after,
+        .ol-popup:before {
+            top: 100%;
+            border: solid transparent;
+            content: " ";
+            height: 0;
+            width: 0;
+            position: absolute;
+            pointer-events: none;
+        }
+
+        .ol-popup:after {
+            border-top-color: white;
+            border-width: 10px;
+            left: 48px;
+            margin-left: -10px;
+        }
+
+        .ol-popup:before {
+            border-top-color: #cccccc;
+            border-width: 11px;
+            left: 48px;
+            margin-left: -11px;
+        }
+    </style>
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%; position: absolute;top: 0;">
+    <div id="map" style="width: 100%;height:100%"></div>
+    <div id="popup" class="ol-popup">
+        <div id="popup-content"></div>
+    </div>
+    <script type="text/javascript">
+        var map, options,
+            url = "http://localhost:8090/iserver/services/map-China400/rest/maps/China_4326",
+            serviceUrl = "http://localhost:8090/iserver/services/spatialAnalysis-China400/restjsr/spatialanalyst";
+
+        var container = document.getElementById('popup');
+        var content = document.getElementById('popup-content');
+        var overlay = new ol.Overlay(({
+            element: container,
+            autoPan: true,
+            autoPanAnimation: {
+                duration: 250
+            }
+        }));
+        map = new ol.Map({
+            target: 'map',
+            view: new ol.View({
+                center: [113, 27], // 中心点
+                zoom: 2, // 缩放级别
+                projection: "EPSG:4326",
+                multiWorld: true
+            }),
+            controls: ol.control.defaults({
+                attributionOptions: {
+                    collapsed: true
+                }
+            }),
+            overlays: [overlay]
+        });
+
+        var layer = new ol.layer.Tile({
+            source: new ol.source.TileSuperMapRest({
+                url: url,
+                tileLoadFunction: function (tile, src) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.responseType = 'blob';
+                    xhr.addEventListener('loadend', function (evt) {
+                        var data = this.response;
+                        if (data !== undefined) {
+                            tile.getImage().src = URL.createObjectURL(data);
+                        } else {
+                            tile.setState('error');
+                        }
+                    });
+                    xhr.addEventListener('error', function () {
+                        tile.setState('error');
+                    });
+                    xhr.open('GET', src);
+                    xhr.setRequestHeader('Accept', '*/*');
+                    xhr.setRequestHeader('X-HW-ID', "userid");
+                    xhr.setRequestHeader('X-HW-APPKEY', "username");
+                    xhr.send();
+                }
+            }),
+            projection: 'EPSG:4326'
+        });
+        map.addLayer(layer);
+
+        routeLocatorProcess_point();
+
+        function routeLocatorProcess_point() {
+            //通过SQL查询的方法建立路由,并添加到地图上
+            queryBySQLService = new ol.supermap.QueryService(url, {
+                headers: {
+                    "X-HW-ID": "userid",
+                    "X-HW-APPKEY": "username"
+                }
+            });
+            queryBySQLParams = new SuperMap.QueryBySQLParameters({
+                queryParams: [
+                    new SuperMap.FilterParameter({
+                        name: "china_Province_ln_LM@China",
+                        attributeFilter: "SMID=100"
+                    })
+                ]
+            });
+            queryBySQLService.queryBySQL(queryBySQLParams, function (SQLQueryServiceResult) {
+                var queryBySQLResult = SQLQueryServiceResult.result.recordsets[0].features;
+                var pathSource = new ol.source.Vector({
+                    features: (new ol.format.GeoJSON()).readFeatures(queryBySQLResult)
+                });
+                pathLayer = new ol.layer.Vector({
+                    source: pathSource,
+                    style: new ol.style.Style({
+                        stroke: new ol.style.Stroke({
+                            color: 'rgba(255, 0, 0, 50)',
+                            width: 3
+                        })
+                    })
+                });
+                map.addLayer(pathLayer);
+
+                //将形成路由的点提出来，为了构造下面点定里程服务sourceRoute
+                var pointsList = [];
+                var routeObj = queryBySQLResult.features[0].geometry.coordinates[0];
+                for (var i = 0; i < routeObj.length; i++) {
+                    pointsList.push([routeObj[i][0], routeObj[i][1], routeObj[i][2]])
+                }
+                var routeLine = new ol.geom.LineString([pointsList]);
+
+                //里程定点服务
+                routeLocatorService = new ol.supermap.SpatialAnalystService(serviceUrl, {
+                    headers: {
+                        "X-HW-ID": "userid",
+                        "X-HW-APPKEY": "username"
+                    }
+                });
+                routeLocatorParameters_point = new SuperMap.RouteLocatorParameters({
+                    "sourceRoute": routeLine,
+                    "type": "POINT",
+                    "measure": 800,
+                    "offset": 0,
+                    "isIgnoreGap": true
+                });
+                routeLocatorService.routeLocate(routeLocatorParameters_point, function (routeLocateServiceResult) {
+                    var vectorSource = new ol.source.Vector({
+                        features: [(new ol.format.GeoJSON()).readFeature(routeLocateServiceResult.result.resultGeometry)],
+                        wrapX: false
+                    });
+                    resultLayer = new ol.layer.Vector({
+                        source: vectorSource,
+                    });
+                    map.addLayer(resultLayer);
+                    var innerHTML = resources.msg_queryMileagePoint1 + routeLocatorParameters_point.measure + resources.msg_queryMileagePoint2;
+                    content.innerHTML = innerHTML;
+                    overlay.setPosition([routeLocateServiceResult.result.resultGeometry.geometry.coordinates[0], routeLocateServiceResult.result.resultGeometry.geometry.coordinates[1]]);
+                });
+            });
+        }
+    </script>
+</body>
+
+</html>

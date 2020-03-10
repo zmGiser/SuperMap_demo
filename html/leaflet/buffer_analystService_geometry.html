@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>bufferAnalystService</title>
+    <script type="text/javascript" src="../../dist/leaflet/include-leaflet.js"></script>
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%;position: absolute;top: 0;">
+    <div id="map" style="margin:0 auto;width: 100%;height: 100%"></div>
+
+    <script type="text/javascript">
+        var map, url = "http://localhost:8090/iserver/services/map-Dubai/rest/maps/Dubai";
+        var serviceUrl = "http://localhost:8090/iserver/services/spatialAnalysis-Dubai/restjsr/spatialanalyst";
+        map = L.map('map', {
+            crs: L.CRS.EPSG4326,
+            center: [25.08, 55.23],
+            maxZoom: 18,
+            zoom: 14
+        });
+        L.TileLayer.include({
+            createTile: function (coords, done) {
+                var tile = document.createElement('img');
+                L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
+                L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
+                if (this.options.crossOrigin || this.options.crossOrigin === '') {
+                    tile.crossOrigin = this.options.crossOrigin === true ? '' : this.options.crossOrigin;
+                }
+                tile.alt = '';
+                tile.setAttribute('role', 'presentation');
+                var xhr = new XMLHttpRequest();
+                xhr.responseType = 'blob';
+                xhr.addEventListener('loadend', function (evt) {
+                    var data = this.response;
+                    if (data !== undefined) {
+                        tile.src = URL.createObjectURL(data);
+                    } else {
+                        tile.setState('error');
+                    }
+
+                });
+                xhr.addEventListener('error', function () {
+                    tile.setState('error');
+                });
+                xhr.open('GET', this.getTileUrl(coords));
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('X-HW-ID', 'userid');
+                xhr.setRequestHeader('X-HW-APPKEY', 'username');
+                xhr.send();
+                return tile;
+            }
+        });
+        L.supermap.tiledMapLayer(url, { noWrap: true }).addTo(map).once("load", function () {
+            geoBufferAnalystProcess();
+        });
+
+        function geoBufferAnalystProcess() {
+            var pointsList = [
+                [25.08, 55.23],
+                [25.18, 55.25]
+            ];
+            //在地图上添加所有离散gps信号点
+            for (var i = 0; i < pointsList.length; i++) {
+                L.circleMarker(pointsList[i], { color: 'black', radius: 2 }).addTo(map);
+            }
+            //将离散gps信号点生成线路
+            var roadLine = L.polyline(pointsList, { color: 'red' }).addTo(map);
+            bufferAnalystService = L.supermap.spatialAnalystService(serviceUrl, {
+                headers: {
+                    "X-HW-ID": "userid",
+                    "X-HW-APPKEY": "username"
+                }
+            });
+            //对生成的线路进行缓冲区分析
+            geoBufferAnalystParams = new SuperMap.GeometryBufferAnalystParameters({
+                sourceGeometry: roadLine,
+                bufferSetting: new SuperMap.BufferSetting({
+                    endType: SuperMap.BufferEndType.ROUND,
+                    leftDistance: new SuperMap.BufferDistance({ value: 0.04 }),
+                    rightDistance: new SuperMap.BufferDistance({ value: 0.04 }),
+                    semicircleLineSegment: 10
+                })
+            });
+            bufferAnalystService.bufferAnalysis(geoBufferAnalystParams, function (serviceResult) {
+                resultLayer = L.geoJSON(serviceResult.result.resultGeometry).addTo(map);
+                //查询出缓冲区内信号影响范围内的工厂
+                queryService = L.supermap.queryService(url, {
+                    headers: {
+                        "X-HW-ID": "userid",
+                        "X-HW-APPKEY": "username"
+                    }
+                });
+                queryByGeometryParameters = new SuperMap.QueryByGeometryParameters({
+                    queryParams: [new SuperMap.FilterParameter({ name: "areare_pi_school_20@are-mupoi" })],
+                    geometry: resultLayer,
+                    spatialQueryMode: SuperMap.SpatialQueryMode.INTERSECT
+                });
+                queryService.queryByGeometry(queryByGeometryParameters, function (serviceResult) {
+                    var result = serviceResult.result;
+                    resultLayer1 = L.geoJSON(result.recordsets[0].features).addTo(map);
+                });
+            });
+        }
+
+    </script>
+</body>
+
+</html>

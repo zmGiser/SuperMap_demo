@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>buffer_analystService_geometry</title>
+    <script type="text/javascript" src="../js/include-web.js"></script>
+    <script src="../../dist/openlayers/include-openlayers.js"></script>
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%; position: absolute;top: 0;">
+    <div id="map" style="width: 100%;height:100%"></div>
+    <script type="text/javascript">
+        var map, options,
+            url = "http://localhost:8090/iserver/services/map-China400/rest/maps/China_4326",
+            serviceUrl = "http://localhost:8090/iserver/services/spatialAnalysis-China400/restjsr/spatialanalyst";
+        map = new ol.Map({
+            target: 'map',
+            view: new ol.View({
+                center: [103, 26], // 中心点
+                zoom: 5, // 缩放级别
+                projection: "EPSG:4326"
+            }),
+            controls: ol.control.defaults({
+                attributionOptions: {
+                    collapsed: true
+                }
+            }),
+            layers: [
+                // 创建一个使用Open Street Map地图源的瓦片图层
+                new ol.layer.Tile({ source: new ol.source.OSM() })
+            ],
+        });
+        var layer = new ol.layer.Tile({
+            source: new ol.source.TileSuperMapRest({
+                url: url,
+                tileLoadFunction: function (tile, src) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.responseType = 'blob';
+                    xhr.addEventListener('loadend', function (evt) {
+                        var data = this.response;
+                        if (data !== undefined) {
+                            tile.getImage().src = URL.createObjectURL(data);
+                        } else {
+                            tile.setState('error');
+                        }
+                    });
+                    xhr.addEventListener('error', function () {
+                        tile.setState('error');
+                    });
+                    xhr.open('GET', src);
+                    xhr.setRequestHeader('Accept', '*/*');
+                    xhr.setRequestHeader('X-HW-ID', "userid");
+                    xhr.setRequestHeader('X-HW-APPKEY', "username");
+                    xhr.send();
+                }
+            }),
+            projection: 'EPSG:4326'
+        });
+        map.addLayer(layer);
+        geoBufferAnalystProcess();
+
+        function geoBufferAnalystProcess() {
+            var pointsList = [
+                [113, 27],
+                [113, 25]
+            ];
+            //在所有离散gps信号点添加到地图上
+            for (i = 0; i < pointsList.length; i++) {
+                var point = new ol.Feature({
+                    geometry: new ol.geom.Point(pointsList[i])
+                });
+                var pointLayer = new ol.layer.Vector({
+                    source: new ol.source.Vector({
+                        features: [point]
+                    }),
+                    style: new ol.style.Style({
+                        image: new ol.style.Circle({
+                            radius: 4,
+                            fill: new ol.style.Fill({
+                                color: 'black'
+                            })
+                        })
+                    })
+                });
+                map.addLayer(pointLayer);
+            }
+            //将由离散gps信号点生成的线路添加到地图上
+            var roadLine = new ol.geom.LineString(pointsList);
+            var roadLineSource = new ol.source.Vector({
+                features: [new ol.Feature(roadLine)]
+            });
+            var roadLineLayer = new ol.layer.Vector({
+                source: roadLineSource,
+                style: new ol.style.Style({
+                    stroke: new ol.style.Stroke({
+                        color: 'red',
+                        width: 3
+                    })
+                })
+            });
+            map.addLayer(roadLineLayer);
+            //创建缓冲区分析服务参数
+            var geoBufferAnalystParams = new SuperMap.GeometryBufferAnalystParameters({
+                sourceGeometry: roadLine,
+                bufferSetting: new SuperMap.BufferSetting({
+                    endType: SuperMap.BufferEndType.ROUND,
+                    leftDistance: new SuperMap.BufferDistance({ value: 1 }),
+                    rightDistance: new SuperMap.BufferDistance({ value: 1 }),
+                    semicircleLineSegment: 10
+                })
+            });
+            //向iServer发送请求并返回结果
+            new ol.supermap.SpatialAnalystService(serviceUrl, {
+                headers: {
+                    "X-HW-ID": "userid",
+                    "X-HW-APPKEY": "username"
+                }
+            }).bufferAnalysis(geoBufferAnalystParams, function (serviceResult) {
+                console.log('serviceResult :', serviceResult);
+                var bufferSource = new ol.source.Vector({
+                    features: (new ol.format.GeoJSON()).readFeatures(serviceResult.result.resultGeometry)
+                });
+                var resultLayer = new ol.layer.Vector({
+                    source: bufferSource,
+                    style: new ol.style.Style({
+                        stroke: new ol.style.Stroke({
+                            color: 'blue',
+                            width: 1
+                        }),
+                        fill: new ol.style.Fill({
+                            color: 'rgba(255, 0, 0, 0.1)'
+                        })
+                    })
+                });
+                map.addLayer(resultLayer);
+
+                //将组成缓冲区的边界点提出来，为了构造下面查询服务的geometry
+                var bufferPoints = [];
+                var coordinate = serviceResult.result.resultGeometry.geometry.coordinates[0][0];
+                for (var i = 0; i < coordinate.length; i++) {
+                    bufferPoints.push([coordinate[i][0], coordinate[i][1]]);
+                }
+                var geometry = new ol.geom.Polygon([bufferPoints]);
+                queryByGeometryParameters = new SuperMap.QueryByGeometryParameters({
+                    queryParams: [new SuperMap.FilterParameter({ name: "China_Rural_pt@China" })],
+                    geometry: geometry,
+                    spatialQueryMode: SuperMap.SpatialQueryMode.INTERSECT
+                });
+
+                new ol.supermap.QueryService(url, {
+                    headers: {
+                        "X-HW-ID": "userid",
+                        "X-HW-APPKEY": "username"
+                    }
+                }).queryByGeometry(queryByGeometryParameters, function (serviceResult) {
+                    var features = (new ol.format.GeoJSON()).readFeatures(serviceResult.result.recordsets[0].features);
+                    var iconStyle = new ol.style.Style({
+                        image: new ol.style.Icon(({
+                            anchor: [0.5, 1],
+                            src: '../img/walk.png'
+                        }))
+                    });
+                    for (var i = 0; i < features.length; i++) {
+                        features[i].setStyle(iconStyle);
+                    }
+                    var vectorSource = new ol.source.Vector({
+                        features: features
+                    });
+                    var resultLayer1 = new ol.layer.Vector({
+                        source: vectorSource
+                    });
+                    map.addLayer(resultLayer1);
+                });
+            });
+        }
+    </script>
+</body>
+
+</html>

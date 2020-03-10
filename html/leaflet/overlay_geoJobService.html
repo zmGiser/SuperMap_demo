@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>overlayGeoJobService</title>
+    <script type="text/javascript" include="jquery,bootstrap,widgets" src="../js/include-web.js"></script>
+    <script type="text/javascript" src="../../dist/leaflet/include-leaflet.js"></script>
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%;position: absolute;top: 0;">
+    <div id="map" style="margin:0 auto;width: 100%;height: 100%"></div>
+
+    <script type="text/javascript">
+        var map, options, url = "http://localhost:8090/iserver/services/map-Dubai/rest/maps/Dubai";
+        var serviceUrl = "http://localhost:8090/iserver/services/spatialAnalysis-Dubai/restjsr/spatialanalyst";
+        map = L.map('map', {
+            crs: L.CRS.EPSG4326,
+            center: [25.08, 55.23],
+            maxZoom: 18,
+            zoom: 10
+        });
+        info = L.control({
+            position: 'topright'
+        });
+
+        L.TileLayer.include({
+            createTile: function (coords, done) {
+                var tile = document.createElement('img');
+                L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
+                L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
+                if (this.options.crossOrigin || this.options.crossOrigin === '') {
+                    tile.crossOrigin = this.options.crossOrigin === true ? '' : this.options.crossOrigin;
+                }
+                tile.alt = '';
+                tile.setAttribute('role', 'presentation');
+                var xhr = new XMLHttpRequest();
+                xhr.responseType = 'blob';
+                xhr.addEventListener('loadend', function (evt) {
+                    var data = this.response;
+                    if (data !== undefined) {
+                        tile.src = URL.createObjectURL(data);
+                    } else {
+                        tile.setState('error');
+                    }
+
+                });
+                xhr.addEventListener('error', function () {
+                    tile.setState('error');
+                });
+                xhr.open('GET', this.getTileUrl(coords));
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('X-HW-ID', 'userid');
+                xhr.setRequestHeader('X-HW-APPKEY', 'username');
+                xhr.send();
+                return tile;
+            }
+        });
+        L.supermap.tiledMapLayer(url, { transparent: true, cacheEnabled: false, noWrap: true }).addTo(map);
+        overlayAnalystProcess();
+
+        function overlayAnalystProcess() {
+            overlayAnalystService = L.supermap.spatialAnalystService(serviceUrl, {
+                headers: {
+                    "X-HW-ID": "userid",
+                    "X-HW-APPKEY": "username"
+                }
+            });
+            datasetOverlayAnalystParameters = new SuperMap.DatasetOverlayAnalystParameters({
+                sourceDataset: "are10_nw_FRC_4@are-mu",
+                operateDataset: "areare___________lu@are-mu",
+                tolerance: 0,
+                operation: SuperMap.OverlayOperationType.INTERSECT
+            });
+            overlayAnalystService.overlayAnalysis(datasetOverlayAnalystParameters, function (serviceResult) {
+                var result = serviceResult.result;
+                resultLayer = L.geoJSON(result.recordset.features).addTo(map);
+            });
+        }
+    </script>
+</body>
+
+</html>

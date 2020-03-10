@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>findPathService</title>
+    <script type="text/javascript" src="../../dist/leaflet/include-leaflet.js"></script>
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%;position: absolute;top: 0;">
+    <div id="map" style="margin:0 auto;width: 100%;height: 100%"></div>
+
+    <script type="text/javascript">
+            var map,
+                url = "http://localhost:8090/iserver/services/map-AbuDhabi/rest/maps/AbuDhabi";
+
+        map = L.map('map', {
+            crs: L.CRS.EPSG4326,
+            center: [23.93,53.8],
+            maxZoom: 18,
+            minZoom: 1,
+            zoom: 10
+        });
+        L.ImageOverlay.include({
+            _initImage: function () {
+                var wasElementSupplied = this._url.tagName === 'IMG';
+                var img = (this._image = wasElementSupplied ? this._url : L.DomUtil.create('img'));
+
+                L.DomUtil.addClass(img, 'leaflet-image-layer');
+                if (this._zoomAnimated) {
+                    L.DomUtil.addClass(img, 'leaflet-zoom-animated');
+                }
+                if (this.options.className) {
+                    L.DomUtil.addClass(img, this.options.className);
+                }
+
+                img.onselectstart = L.Util.falseFn;
+                img.onmousemove = L.Util.falseFn;
+
+                img.onload = L.Util.bind(this.fire, this, 'load');
+                img.onerror = L.Util.bind(this._overlayOnError, this, 'error');
+
+                if (this.options.crossOrigin || this.options.crossOrigin === '') {
+                    img.crossOrigin = this.options.crossOrigin === true ? '' : this.options.crossOrigin;
+                }
+
+                if (this.options.zIndex) {
+                    this._updateZIndex();
+                }
+
+                if (wasElementSupplied) {
+                    this._url = img.src;
+                    return;
+                }
+
+                var xhr = new XMLHttpRequest();
+                xhr.responseType = 'blob';
+                xhr.addEventListener('loadend', function (evt) {
+                    var data = this.response;
+                    if (data !== undefined) {
+                        img.src = URL.createObjectURL(data);
+                    } else {
+                        // img.setState('error');
+                    }
+                });
+                xhr.addEventListener('error', function () {
+                    tile.setState('error');
+                });
+                xhr.open('GET', this._url);
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('X-HW-ID', 'userid');
+                xhr.setRequestHeader('X-HW-APPKEY', 'username');
+                xhr.send();
+                img.alt = this.options.alt;
+            }
+        });
+        L.supermap.imageMapLayer(url,{
+            transparent:false,
+            layersID:'8c8706535a4f470681326403bcb307eb_0164e9da10db41508166a85971be940d'
+        }).addTo(map);
+    </script>
+</body>
+
+</html>

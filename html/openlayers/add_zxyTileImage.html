@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>zxyTileImage</title>
+    <script src="../../dist/openlayers/include-openlayers.js"></script>
+    <script type="text/javascript" include="bootstrap-css,jqury" src="../js/include-web.js"></script>
+    <script
+        src="https://cdn.polyfill.io/v2/polyfill.min.js?features=fetch,requestAnimationFrame,Element.prototype.classList,URL"></script>
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%; position: absolute;top: 0;">
+    <div id="map" style="width: 100%;height:100%"></div>
+    <script>
+        // var zxyUrl = 'http://localhost:8090/iserver/services/map-China4002/rest/maps/China400_en/zxyTileImage.png?z={z}&x={x}&y={y}';
+        var zxyUrl = 'http://localhost:8090/iserver/services/map-China400/rest/maps/China_4326/zxyTileImage.png?z={z}&x={x}&y={y}&prjCoordSys={"epsgCode":3857}';
+
+        var map = new ol.Map({
+            layers: [
+                new ol.layer.Tile({
+                    source: new ol.source.OSM()
+                })
+            ],
+            target: 'map',
+            view: new ol.View({
+                center: [0, 0],
+                zoom: 0,
+                projection: 'EPSG:3857'
+            })
+        });
+        var source = new ol.source.XYZ({
+            url: zxyUrl,
+            transparent: true,
+            tileLoadFunction: function (tile, src) {
+                var xhr = new XMLHttpRequest();
+                xhr.responseType = 'blob';
+                xhr.addEventListener('loadend', function (evt) {
+                    var data = this.response;
+                    if (data !== undefined) {
+                        tile.getImage().src = URL.createObjectURL(data);
+                    } else {
+                        tile.setState('error');
+                    }
+                });
+                xhr.addEventListener('error', function () {
+                    tile.setState('error');
+                });
+                xhr.open('GET', src);
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('X-HW-ID', "userid");
+                xhr.setRequestHeader('X-HW-APPKEY', "username");
+                xhr.send();
+            }
+        });
+
+        var layer = new ol.layer.Tile({
+            source: source,
+            projection: 'EPSG:3857'
+        });
+        map.addLayer(layer);
+    </script>
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>route_calculate_measure_process</title>
+    <script type="text/javascript" include="bootstrap-css" src="../js/include-web.js"></script>
+    <script type="text/javascript" src="../../dist/leaflet/include-leaflet.js"></script>
+
+</head>
+
+<body style=" margin: 0;overflow: hidden;background: #fff;width: 100%;height:100%;position: absolute;top: 0;">
+    <div id="map" style="margin:0 auto;width: 100%;height: 100%"></div>
+    </div>
+    <script type="text/javascript">
+        var url = "http://localhost:8090/iserver/services/map-China400/rest/maps/China_4326",
+            serviceUrl = "http://localhost:8090/iserver/services/spatialAnalysis-China400/restjsr/spatialanalyst";
+        var map = L.map('map', {
+            crs: L.CRS.EPSG4326,
+            center: [27, 113],
+            maxZoom: 18,
+            zoom: 3
+        });
+        L.TileLayer.include({
+            createTile: function (coords, done) {
+                var tile = document.createElement('img');
+                L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
+                L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
+                if (this.options.crossOrigin || this.options.crossOrigin === '') {
+                    tile.crossOrigin = this.options.crossOrigin === true ? '' : this.options.crossOrigin;
+                }
+                tile.alt = '';
+                tile.setAttribute('role', 'presentation');
+                var xhr = new XMLHttpRequest();
+                xhr.responseType = 'blob';
+                xhr.addEventListener('loadend', function (evt) {
+                    var data = this.response;
+                    if (data !== undefined) {
+                        tile.src = URL.createObjectURL(data);
+                    } else {
+                        tile.setState('error');
+                    }
+
+                });
+                xhr.addEventListener('error', function () {
+                    tile.setState('error');
+                });
+                xhr.open('GET', this.getTileUrl(coords));
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('X-HW-ID', 'userid');
+                xhr.setRequestHeader('X-HW-APPKEY', 'username');
+                xhr.send();
+                return tile;
+            }
+        });
+        L.supermap.tiledMapLayer(url, { noWrap: true }).addTo(map);
+        routeCalculateMeasureProcess();
+
+        function routeCalculateMeasureProcess() {
+            //通过SQL查询的方法建立路由,并添加到地图上
+            queryBySQLService = L.supermap.queryService(url, {
+                headers: {
+                    "X-HW-ID": "userid",
+                    "X-HW-APPKEY": "username"
+                }
+            });
+            queryBySQLParams = new SuperMap.QueryBySQLParameters({
+                queryParams: [
+                    new SuperMap.FilterParameter({
+                        name: "china_Province_ln_LM@China",
+                        attributeFilter: "SMID=100"
+                    })
+                ]
+            });
+            queryBySQLService.queryBySQL(queryBySQLParams, function (SQLQueryServiceResult) {
+                var result = SQLQueryServiceResult.result;
+                if (result && result.recordsets && result.recordsets[0].features) {
+                    var resultFeatures = result.recordsets[0].features;
+                    resultLayer = L.geoJSON(resultFeatures, { color: "red" }).addTo(map);
+                    //将形成路由的点提出来，为了构造下面里程定点服务sourceRoute属性的polyline
+                    pointsList = [];
+                    var routeObj = resultFeatures.features[0].geometry.coordinates[0];
+                    for (var i = 0; i < routeObj.length; i++) {
+                        pointsList.push([routeObj[i][1], routeObj[i][0], routeObj[i][2]])
+                    }
+                    routeLine = L.polyline(pointsList);
+                    //在组成路由的点中选取一个查询点(数组中第8个点),并添加到地图上
+                var marker = L.circleMarker([routeObj[7][1], routeObj[7][0]], {radius: 3, color: 'black'}).addTo(map);
+                //点定里程服务
+                routeCalculateMeasureParameters = new SuperMap.RouteCalculateMeasureParameters({
+                    "sourceRoute": routeLine,   //必选,路由类型
+                    "point": L.point(routeObj[7][0], routeObj[7][1]),            //必选
+                    "tolerance": 10,
+                    "isIgnoreGap": false
+                });
+                routeCalculateMeasureService = L.supermap.spatialAnalystService(serviceUrl);
+                routeCalculateMeasureService.routeCalculateMeasure(routeCalculateMeasureParameters, function (routeCalculateServiceResult) {
+                    if (routeCalculateServiceResult.result && routeCalculateServiceResult.result.measure) {
+                        marker.bindTooltip(resources.msg_MByQuery + routeCalculateServiceResult.result.measure + "", {
+                            direction: "top",
+                            offset: L.point(0, -5)
+                        }).openTooltip();
+                    } else {
+                        alert(routeCalculateServiceResult.error.errorMsg);
+                    }
+                });
+            } else {
+                alert(SQLQueryServiceResult.error.errorMsg);
+            }
+        });
+        }
+    </script>
+</body>
+
+</html>
